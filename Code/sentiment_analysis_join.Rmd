@@ -1,0 +1,47 @@
+
+
+
+```{r}
+
+library(readxl)
+setwd(r"{E:\OMSA\Semesters\01_Fall_23\MGMT 6203\Group Project\Code}")
+
+df_picks <- read.csv("picks.csv",header=TRUE)
+df_round1 <- read.csv("round_1.csv",header=TRUE)
+df_round23 <- read.csv("round_23.csv",header=TRUE)
+df_round4567 <- read.csv("round_4567.csv",header=TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+stacked_round_df <- bind_rows(
+  select(df_round1, -ends_with("_y")),
+  select(df_round23, -ends_with("_y")),
+  select(df_round4567, -ends_with("_y"))
+)
+
+all_timestamps <- c(
+  unique(df_picks$timestamp),
+  unique(df_round1$timestamp),
+  unique(df_round23$timestamp),
+  unique(df_round4567$timestamp)
+)
+
+combined_df <- data.frame(timestamp = unique(all_timestamps))
+combined_df <- combined_df %>%
+  full_join(df_picks, by = "timestamp") %>%
+  full_join(stacked_round_df, by = "timestamp")
+
+View(combined_df)
+```
+
+```{r}
+#Check Data
+timestamp_to_find <- 1587855600 #Last pick
+
+specific_row <- combined_df %>%
+  filter(timestamp == timestamp_to_find)
+View(specific_row)
+```
