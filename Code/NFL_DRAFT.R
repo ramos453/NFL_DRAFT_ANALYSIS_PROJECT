@@ -90,7 +90,32 @@ draft_data$contains_team_name <- sapply(1:nrow(draft_data), function(row) {
   if (is.na(result)) FALSE else result
 })
 
-draft_data$contains_relevant_info <- rowSums(draft_data[c("contains_lastname", "contains_city", "contains_team_name")]) > 0
+bag_of_words <- c(
+  "quarterback", " qb ",
+  "running back", " rb ",
+  "wide receiver", " wr ",
+  "tight end", " te ",
+  "offensive tackle", " ot ",
+  "offensive guard", " og ",
+  "center", " c ",
+  "defensive tackle", " dt ",
+  "defensive end", " de ",
+  "linebacker", " lb ",
+  "cornerback", " cb ",
+  "safety", " s ",
+  "kicker", " k ",
+  "punter", " p ",
+  "fullback", " fb ",
+  "return specialist", " rs "
+)
+
+draft_data$contains_position <- sapply(1:nrow(draft_data), function(row) {
+  result <- grepl(paste(bag_of_words, collapse = "|"), draft_data$text[row], ignore.case = TRUE)
+  if (is.na(result)) FALSE else result
+})
+
+
+draft_data$contains_relevant_info <- rowSums(draft_data[c("contains_lastname", "contains_city", "contains_team_name","contains_firstname","contains_position")]) > 0
 
 
 clean_data<- draft_data[draft_data$contains_relevant_info, c("last_name","City", "Name", "sentiment", "text")]
