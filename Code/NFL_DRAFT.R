@@ -5,44 +5,40 @@ rm = (list= ls())
 
 setwd(r"{E:\OMSA\Semesters\01_Fall_23\MGMT 6203\Group Project\Code}")
 
-picks <- read.csv("picks.csv")
+library(readxl)
+library(dplyr)
+library(tidyr)
 
-head(picks)
+df_picks <- read.csv("picks.csv",header=TRUE)
+df_round1 <- read.csv("round_1.csv",header=TRUE)
+df_round23 <- read.csv("round_23.csv",header=TRUE)
+df_round4567 <- read.csv("round_4567.csv",header=TRUE)
 
-round_1 <- read.csv("round_1.csv")
-round_23 <- read.csv("round_23.csv")
-round_4567 <- read.csv("round_4567.csv")
-nfl_abrev <- read.csv("nfl_teams.csv")
+stacked_round_df <- bind_rows(
+  select(df_round1, -ends_with("_y")),
+  select(df_round23, -ends_with("_y")),
+  select(df_round4567, -ends_with("_y"))
+)
 
-head(picks)
-head(round_1)
-head(round_23)
-head(round_4567)
-head(nfl_abrev)
+head(stacked_round_df)
 
-timestamps_rounds <- unique(c(round_1$timestamp, round_23$timestamp, round_4567$timestamp))
-
-picks$in_rounds <- picks$timestamp %in% timestamps_rounds
-
-picks$in_rounds
-
-timestamps_without_matching_info <- picks$timestamp[!picks$in_rounds]
-timestamps_without_matching_info
+tail(stacked_round_df)
 
 
-all_rounds <- rbind(round_1, round_23, round_4567)
+all_timestamps <- c(
+  unique(df_picks$timestamp),
+  unique(df_round1$timestamp),
+  unique(df_round23$timestamp),
+  unique(df_round4567$timestamp)
+)
 
+draft_data <- data.frame(timestamp = unique(all_timestamps))
+draft_data <- draft_data %>%
+  full_join(df_picks, by = "timestamp") %>%
+  full_join(stacked_round_df, by = "timestamp")
 
-common_timestamps <- intersect(picks$timestamp, all_rounds$timestamp)
-
-draft_data <- merge(picks[picks$timestamp %in% common_timestamps, ], all_rounds, by = "timestamp")
-
-tail(draft_data$text, 20)
-
-tail(draft_data)
- 
-sample(draft_data$text, 20)
-
+rows_draftdata<-nrow(draft_data)
+rows_draftdata
 
 
 draft_data$text <- tolower(draft_data$text)
@@ -122,6 +118,9 @@ clean_data<- draft_data[draft_data$contains_relevant_info, c("last_name","City",
 
 View(clean_data)
 
+rows_filtered<-nrow(clean_data)
+
+rows_filtered / rows_draftdata
 
 
 
