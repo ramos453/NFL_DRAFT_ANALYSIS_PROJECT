@@ -13,6 +13,7 @@ df_picks <- read.csv("picks.csv",header=TRUE)
 df_round1 <- read.csv("round_1.csv",header=TRUE)
 df_round23 <- read.csv("round_23.csv",header=TRUE)
 df_round4567 <- read.csv("round_4567.csv",header=TRUE)
+nfl_abrev <- read.csv("nfl_teams.csv")
 
 stacked_round_df <- bind_rows(
   select(df_round1, -ends_with("_y")),
