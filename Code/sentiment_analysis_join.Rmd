@@ -34,7 +34,7 @@ combined_df <- combined_df %>%
   full_join(df_picks, by = "timestamp") %>%
   full_join(stacked_round_df, by = "timestamp")
 
-View(combined_df)
+summary(combined_df)
 ```
 
 ```{r}
@@ -44,4 +44,171 @@ timestamp_to_find <- 1587855600 #Last pick
 specific_row <- combined_df %>%
   filter(timestamp == timestamp_to_find)
 View(specific_row)
+```
+
+
+```{r}
+
+new_df <- combined_df %>%
+  filter(grepl("https", text))
+
+# View the new data frame
+View(new_df)
+```
+
+```{r}
+
+num_bins <- 20
+hist_range <- range(combined_df$timestamp)
+
+timestamp_intervals <- cut(
+  combined_df$timestamp,
+  breaks = seq(hist_range[1], hist_range[2], length.out = num_bins + 1),
+  include.lowest = TRUE
+)
+timestamp_numeric <- as.numeric(timestamp_intervals)
+
+histogram <- hist(timestamp_numeric, plot = FALSE)
+plot(histogram, main = "Timestamp Histogram", xlab = "Timestamp Buckets", ylab = "Count")
+```
+
+
+```{r}
+# Create a histogram for positive sentiment (sentiment >= 0)
+hist_positive <- hist(new_df[new_df$sentiment >= 0, ]$timestamp, plot = FALSE)
+
+# Create a histogram for negative sentiment (sentiment < 0)
+hist_negative <- hist(new_df[new_df$sentiment < 0, ]$timestamp, plot = FALSE)
+
+# Plot the histograms
+par(mfrow=c(1, 2))  # Arrange plots side by side
+plot(hist_positive, main = "Positive Sentiment Histogram", xlab = "Timestamp Buckets", ylab = "Count")
+plot(hist_negative, main = "Negative Sentiment Histogram", xlab = "Timestamp Buckets", ylab = "Count")
+par(mfrow=c(1, 1))  # Reset the plotting layout
+
+```
+
+```{r export}
+not_in_new_df <- anti_join(combined_df, new_df, by = "timestamp")
+write.csv(not_in_new_df, file = "filtered_df.csv", row.names = FALSE)
+colnames(not_in_new_df)
+```
+
+```{r team_mapping}
+team_mapping <- c(
+  "Chargers" = "LAC", "Colts" = "IND", "Lions" = "DET", "Eagles" = "PHI",
+  "Raiders" = "LV", "Jaguars" = "JAX", "Packers" = "GB", "Patriots" = "NE",
+  "Bears" = "CHI", "Panthers" = "CAR", "Seahawks" = "SEA", "49ers" = "SF",
+  "Saints" = "NO", "Vikings" = "MIN", "Giants" = "NYG", "Browns" = "CLE",
+  "Redskins" = "WAS", "Ravens" = "BAL", "Dolphins" = "MIA", "Broncos" = "DEN",
+  "Falcons" = "ATL", "Cardinals" = "ARI", "Buccaneers" = "TB", "Jets" = "NYJ",
+  "Bills" = "BUF", "Bengals" = "CIN", "Cowboys" = "DAL", "Chiefs" = "KC",
+  "Texans" = "HOU", "Rams" = "LA", "Steelers" = "PIT", "Titans" = "TEN"
+)
+```
+
+```{r}
+
+not_in_new_df$Team.Fan <- team_mapping[not_in_new_df$team.y]
+
+
+colnames(not_in_new_df)
+
+
+```
+
+
+```{r pick_matching}
+df_temp <- not_in_new_df
+df_ts <- not_in_new_df %>%
+  select(timestamp, pick, round) %>%
+  distinct()
+
+colnames(df_ts)[colnames(df_ts) == "pick"] <- "associated_pick"
+colnames(df_ts)[colnames(df_ts) == "round"] <- "associated_round"
+
+n<-nrow(df_temp)
+associated_timestamps <- rep(NA, nrow(df_temp))
+
+for (i in 1:n) {
+  
+  current_timestamp <- df_temp$timestamp[i]
+  associated_timestamp <- max(df_ts$timestamp[df_ts$timestamp <= current_timestamp])
+  associated_timestamps[i] <- associated_timestamp
+}
+associated_timestamps
+df_temp$associated_timestamp <- associated_timestamps
+
+df_temp <- left_join(df_temp,
+                     df_ts,
+                     by = c("associated_timestamp" = "timestamp"))
+
+View(df_temp)
+```
+
+```{r sentiment}
+
+library(tidytext)
+library(dplyr)
+
+data <- df_temp
+
+lexicon <- get_sentiments("afinn")
+custom_lexicon <- read_excel("sentiment_keywords.xlsx")
+combined_lexicon <- bind_rows(lexicon, custom_lexicon)
+combined_lexicon <- combined_lexicon %>%
+  rename(bigram = word)
+
+data_tokens <- data %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+sentiments <- data_tokens %>%
+  inner_join(combined_lexicon, by = "bigram")
+
+# Calculate the sentiment score
+sentiment_score <- sentiments %>%
+  group_by(bigram) %>%  # You can group by "word" here, not "text"
+  summarize(sentiment_score = sum(value))
+
+word_frequency <- data_tokens %>%
+  count(bigram, sort = TRUE)
+
+sentiment_score <- sentiment_score %>%
+  left_join(word_frequency, by = "bigram")
+sentiment_score <- sentiment_score %>%
+  arrange(desc(n))
+
+View(sentiment_score)
+```
+
+```{r}
+library(tidytext)
+library(dplyr)
+data <- df_temp
+combined_results <- data.frame()
+
+phrase_lengths <- c(2, 3, 4, 5, 6)  
+
+# Iterate through different phrase lengths
+for (n in phrase_lengths) {
+  # Tokenize the text into n-grams
+  data_tokens <- data %>%
+    unnest_tokens(phrase, text, token = "ngrams", n = n)
+  
+  # Calculate word frequency
+  word_frequency <- data_tokens %>%
+    count(phrase, sort = TRUE)
+  
+  # Append the results to the combined data frame
+  combined_results <- bind_rows(combined_results, word_frequency)
+}
+
+combined_results <- combined_results %>%
+  arrange(desc(n))
+View(combined_results)
+```
+
+
+```{r}
+write.csv(df_temp, "comments_associated.csv", row.names=FALSE)
 ```
