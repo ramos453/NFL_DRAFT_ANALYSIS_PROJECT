@@ -20,6 +20,12 @@ df_list <- list(draft_2012, draft_2013, draft_2014, draft_2015, draft_2016,
 #Make one final data frame of all picks
 final_df <- bind_rows(df_list)
 
+#Change to out standard positions
+final_df['Pos'][final_df['Pos'] == 'FB'] <- "RB"
+final_df['Pos'][final_df['Pos'] == 'DT'] <- "DL"
+final_df['Pos'][final_df['Pos'] == 'ILB'] <- "LB"
+final_df['Pos'][final_df['Pos'] == 'OLB'] <- "LB"
+
 #Find the unique Positions in the data frame
 unique_pos <- unique(final_df$Pos)
 
