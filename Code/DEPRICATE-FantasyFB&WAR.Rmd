@@ -1,0 +1,229 @@
+---
+title: "Failed WAR/Fantasy Metric"
+author: "Hugh Hoagland"
+date: '2023-10-15'
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, message = FALSE, warning=FALSE}
+
+
+library(dplyr)
+
+#Read in 2020 fantasy data
+
+Fantasy2020 <- read.csv("2020StdFantasyPointsALL.csv")
+
+#Create z-scores for each position group
+
+normalized_data <- Fantasy2020 %>%
+  group_by(Position) %>%
+  mutate(z_score = (PPG - mean(PPG)) / sd(PPG)) %>%
+  ungroup()
+
+#Add in new column "normalized PPG"
+
+normalized_data <- normalized_data %>%
+  mutate(standardized_PPG = z_score * sd(PPG) + mean(PPG))
+
+#Create dataframe of PFF WAR data
+
+WARsummary <- data.frame(
+  Position = c("QB", "RB", "WR", "TE", "DL", "LB", "DB"),
+  n = c(994, 2373, 2864, 1621, 2259, 2721, 4902),
+  Mean = c(1.63, 0.1, 0.28, 0.18, 0.06, 0.11, 0.23),
+  CofVar = c(0.7, 0.64, 0.84, 0.62, 1.54, 0.83, 0.85))
+
+print(WARsummary)
+
+# Set a weight for the Mean WAR
+
+mean_war_weight <- 0.8  # Adjust this value as needed
+
+# Function to calculate adjusted PPG based on weighted positional factors
+
+calculateAdjustedPPG <- function(data, WARsummary, mean_war_weight) {
+  adjusted_ppg <- numeric(nrow(data))
+  for (i in 1:nrow(data)) {
+    position <- data$Position[i]
+    if (position == "K") {
+      adjusted_ppg[i] <- NA  # Exclude data where position is "K"
+    } else {
+      scaling_factor <- mean_war_weight * WARsummary$Mean[WARsummary$Position == position] + (1 - mean_war_weight)
+      standardized_ppg <- data$standardized_PPG[i]
+      adjusted_ppg[i] <- standardized_ppg * scaling_factor
+    }
+  }
+  return(adjusted_ppg)
+}
+
+normalized_data$PositionalImportanceAdjustedPPG <- calculateAdjustedPPG(normalized_data, WARsummary, mean_war_weight)
+
+# Remove rows with NA values (where position is "K")
+
+normalized_data <- normalized_data[!is.na(normalized_data$PositionalImportanceAdjustedPPG), ]
+
+# Display the adjusted dataframe
+
+print(normalized_data)
+
+library(ggplot2)
+
+# Filter the top 100 players based on the metric (PositionalImportanceAdjustedPPG)
+
+top_100_data <- head(arrange(normalized_data, desc(PositionalImportanceAdjustedPPG)), 100)
+
+# Create a bar chart for relative frequency of positions
+
+ggplot(top_100_data, aes(x = Position, fill = Position)) +
+  geom_bar() +
+  theme_minimal() +
+  labs(title = "Relative Frequency of Positions Among Top 100 Players",
+       x = "Position",
+       y = "Count") +
+  scale_fill_brewer(palette = "Set1")  
+
+
+
+# Filter the top 100 players with a minimum of 10 games played based on the metric (PositionalImportanceAdjustedPPG)
+
+top_100_data_played_10 <- head(arrange(subset(normalized_data, Played10 == 1), desc(PositionalImportanceAdjustedPPG)), 100)
+
+# Create a bar chart for relative frequency of positions
+
+ggplot(top_100_data_played_10, aes(x = Position, fill = Position)) +
+  geom_bar() +
+  theme_minimal() +
+  labs(title = "Relative Frequency of Positions Among Top 100 Players (Min 10 Games Played)",
+       x = "Position",
+       y = "Count") +
+  scale_fill_brewer(palette = "Set1")  # You can change the palette as needed
+
+
+
+
+######################################################################################################
+
+
+PFF2020 <- read.csv("Full2020Summary.csv")
+
+PFF2020$Position[PFF2020$Position %in% c("RB", "FB")] <- "HB"
+
+WAR_chart <- data.frame(
+  Position = c("QB", "HB", "WR", "TE", "T", "G", "C", "DI", "ED", "LB", "CB", "S"),
+  n = c(994, 2373, 2864, 1621, 1543, 1604, 708, 2559, 2259, 2721, 2733, 2169),
+  Mean = c(1.63, 0.1, 0.28, 0.18, 0.09, 0.1, 0.1, 0.06, 0.06, 0.11, 0.23, 0.23),
+  CofVar = c(0.7, 0.64, 0.84, 0.62, 1.09, 1.11, 1.08, 1.34, 1.54, 0.83, 0.91, 0.77)
+)
+
+
+# Function to calculate adjusted performance based on position's Mean and CofVar
+
+calculateAdjustedPerformance <- function(data, WAR_chart) {
+  adjusted_performance <- numeric(nrow(data))
+  for (i in 1:nrow(data)) {
+    position <- data$Position[i]
+    war_info <- WAR_chart[WAR_chart$Position == position, ]
+    
+    # Check if position is found in WAR chart, and assign adjusted performance accordingly
+    
+    adjusted_performance[i] <- ifelse(nrow(war_info) > 0, (data$Grade[i] - war_info$Mean) / war_info$CofVar, NA)
+  }
+  return(adjusted_performance)
+}
+
+# Calculate adjusted performance
+
+PFF2020$AdjustedPerformance <- calculateAdjustedPerformance(PFF2020, WAR_chart)
+
+# Display the adjusted dataframe
+
+print(PFF2020)
+
+
+#too much value is being given to certain positions, namely tight end
+
+
+calculateAdjustedPerformance <- function(PFF2020, WAR_chart, mean_weight) {
+  adjusted_performance <- numeric(nrow(PFF2020))
+  for (i in 1:nrow(PFF2020)) {
+    position <- PFF2020$Position[i]
+    war_info <- WAR_chart[WAR_chart$Position == position, ]
+    
+    # Check if position is found in WAR chart, and assign adjusted performance accordingly
+    adjusted_performance[i] <- ifelse(nrow(war_info) > 0, 
+      (PFF2020$Grade[i] - war_info$Mean) * mean_weight / war_info$CofVar, NA)
+  }
+  return(adjusted_performance)
+}
+
+# Set the weight for mean WAR (adjust as needed)
+
+mean_weight <- 0.8
+
+# Calculate adjusted performance with the specified weight
+
+PFF2020$AdjustedPerformance <- calculateAdjustedPerformance(PFF2020, WAR_chart, mean_weight)
+
+# Display the adjusted dataframe
+
+print(PFF2020)
+
+
+#still not working
+
+# Function to calculate adjusted performance based on mean WAR and the inverse of CofVar
+
+# Set a weight for the Mean WAR
+
+mean_war_weight <- 0.8  # Adjust this value as needed
+
+# Function to calculate adjusted Grade based on weighted positional factors
+
+calculateAdjustedGrade <- function(data, WAR_chart, mean_war_weight) {
+  adjusted_grade <- numeric(nrow(data))
+  for (i in 1:nrow(data)) {
+    position <- data$Position[i]
+    
+    # Check if position is found in the WAR chart
+    if (position %in% WAR_chart$Position) {
+      scaling_factor <- mean_war_weight * WAR_chart$Mean[WAR_chart$Position == position] + (1 - mean_war_weight)
+      grade <- data$Grade[i]
+      adjusted_grade[i] <- grade * scaling_factor
+    } else {
+      # Handle cases where the position is not found in the WAR chart
+      adjusted_grade[i] <- NA
+    }
+  }
+  return(adjusted_grade)
+}
+
+PFF2020$PositionalImportanceAdjustedGrade <- calculateAdjustedGrade(PFF2020, WAR_chart, mean_war_weight)
+
+
+
+top_500_data_played_10 <- head(arrange(subset(PFF2020, Games >= 10), desc(PositionalImportanceAdjustedGrade)), 500)
+
+library(viridis)
+
+# Filter the top 100 players with 10 or more games played based on the metric (PositionalImportanceAdjustedGrade)
+
+top_100_data_played_10 <- head(arrange(subset(PFF2020, Games >= 10), desc(PositionalImportanceAdjustedGrade)), 100)
+
+# Create a bar chart for the relative frequency of positions
+
+ggplot(top_100_data_played_10, aes(x = Position, fill = Position)) +
+  geom_bar() +
+  theme_minimal() +
+  labs(title = "Relative Frequency of Positions Among Top 100 Players (10 or More Games Played)",
+       x = "Position",
+       y = "Count") +
+  scale_fill_viridis(discrete = TRUE)
+
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
