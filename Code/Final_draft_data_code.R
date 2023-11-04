@@ -34,8 +34,8 @@ library(ggridges)
 library(textdata)
 
 #Set working directory
-#setwd(r"{E:\OMSA\Semesters\01_Fall_23\MGMT 6203\Group Project\Code}")
-setwd("C:/Users/Pablo Ramos/Desktop/Data Analytics in Business/NFLProject/round_1.csv/")
+setwd(r"{E:\OMSA\Semesters\01_Fall_23\MGMT 6203\Group Project\Code}")
+
 
 #Read picks and round data
 df_picks <- read.csv("picks.csv",header=TRUE)
