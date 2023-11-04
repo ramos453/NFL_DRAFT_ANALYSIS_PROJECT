@@ -1,0 +1,192 @@
+---
+title: "Player Data"
+author: "Hugh Hoagland"
+date: "2023-10-31"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=TRUE}
+
+#load in the living dataset from Sheets export
+
+PlayerData <- read.csv("CombinedPerformance.csv")
+
+library(dplyr)
+
+# Filter for control draft years
+
+filtered_data_1 <- PlayerData %>%
+  filter(draft_year %in% c(2015, 2016, 2017, 2018, 2019))
+
+library(knitr)
+
+# Create a matrix of counts for position vs. draft round using filtered_data
+position_round_count <- table(filtered_data_1$position, filtered_data_1$draft_round)
+
+# Convert the matrix to a data frame
+position_round_count_df <- as.data.frame.matrix(position_round_count)
+
+
+kable(position_round_count_df, "html")
+
+
+library(tidyr)
+
+# Define the years to consider
+years_to_consider <- 0:2  # Represents years 0, 1, and 2 after the draft
+
+# Filter the data for the first three seasons after each player was drafted
+filtered_data_2 <- filtered_data %>%
+  filter(year >= draft_year & year <= (draft_year + max(years_to_consider)))
+
+# Group the data by "player_id," "position," and "draft_round" and calculate the sum of "total_value" over three years
+player_round_total_sum <- filtered_data_2 %>%
+  group_by(player_id, position, draft_round) %>%
+  summarize(sum_total_value = sum(raw_value_provided)) %>%
+  ungroup()
+
+# Group the data by "position" and "draft_round" and calculate the average of sums
+position_round_average_sum <- player_round_total_sum %>%
+  group_by(position, draft_round) %>%
+  summarize(average_sum_total_value = mean(sum_total_value), .groups = "keep") %>%
+  pivot_wider(names_from = draft_round, values_from = average_sum_total_value, names_prefix = "Round_") %>%
+  ungroup()
+
+position_round_average_sum
+
+
+View(position_round_average_sum)
+View(position_round_count_df)
+
+#Compare draft value dropoff across positions
+
+library(ggplot2)
+
+# Create individual bar charts for each combination of "position" and "draft_round"
+
+individual_bar_charts <- position_round_average_sum %>%
+  gather(key = "Round", value = "AverageTotalValue", -position) %>%
+  ggplot(aes(x = Round, y = AverageTotalValue)) +
+  geom_bar(stat = "identity", fill = "blue", position = "dodge") +
+  labs(title = "Average Total Value Sum by Position and Round",
+       x = "Round", y = "Average Total Value Sum") +
+  facet_wrap(~position, scales = "free", ncol = 2) +
+  theme(legend.position = "none")
+
+ggsave("individual_bar_charts.png", individual_bar_charts, device = "png", width = 10, height = 12)
+
+
+library(viridis) 
+
+position_round_average_sum_long <- position_round_average_sum %>%
+  gather(key = "Round", value = "AverageTotalValue", -position)
+
+# Convert the "Round" column to numeric
+position_round_average_sum_long$Round <- as.numeric(gsub("Round_", "", position_round_average_sum_long$Round))
+
+# Create a combined line chart for the overall trend
+line_chart <- position_round_average_sum_long %>%
+  ggplot(aes(x = Round, y = AverageTotalValue, color = position)) +
+  geom_line() +
+  labs(title = "Average Total Value Sum by Round (Overall Trend)",
+       x = "Round", y = "Average Total Value Sum") +
+  theme(legend.position = "bottom")
+
+# Print the line chart
+print(line_chart)
+
+ggsave("line_chart.png", line_chart, device = "png", width = 10, height = 12)
+
+
+#isolating and valuing 2020 picks
+
+library(dplyr)
+
+# Assuming you have a dataframe named PlayerData
+draft_year_filter <- 2020  # Specify the draft year to filter
+
+# Filter PlayerData for players drafted in 2020
+filtered_data_2020 <- PlayerData %>%
+  filter(draft_year == draft_year_filter)
+
+# Calculate the sum of raw_value_provided for unique player_id values
+summarized_data <- filtered_data_2020 %>%
+  group_by(player_id) %>%
+  summarise(sum_raw_value_provided = sum(raw_value_provided))
+
+# Merge the summarized data with the original filtered data
+result_data <- left_join(filtered_data_2020, summarized_data, by = "player_id")
+
+# Print or save the result_data dataframe
+head(result_data)  # To display the first few rows
+
+unique_players_data <- distinct(result_data, player_id, .keep_all = TRUE)
+
+# Print or save the unique_players_data dataframe
+head(unique_players_data)  # To display the first few rows
+
+
+
+position_round_df <- as.data.frame(position_round_average_sum)
+position_round_df <- position_round_df %>%
+  pivot_longer(
+    cols = starts_with("Round_"),
+    names_to = "draft_round",
+    values_to = "expected_value"
+  )
+
+# Convert the draft_round column to numeric
+position_round_df$draft_round <- as.numeric(gsub("Round_", "", position_round_df$draft_round))
+
+# Print or save the resulting dataframe
+head(position_round_df)  # To display the first few rows
+
+merged_data <- left_join(unique_players_data, position_round_df, by = c("position", "draft_round"))
+
+# Calculate the value_delta by subtracting the expected value from sum_raw_value_provided
+merged_data <- merged_data %>%
+  mutate(value_delta = sum_raw_value_provided - expected_value)
+
+# Print or save the merged_data dataframe with the value_delta column
+head(merged_data)  # To display the first few rows
+
+sorted_data <- merged_data[c("player", "expected_value", "draft_round", "value_delta")] %>%
+  arrange(desc(value_delta))
+
+# Display the first few rows
+head(sorted_data)
+
+
+#control for Tyler Bass - no reference point - by taking weighted average of K 5th and 7th Rd picks as expected value
+
+merged_data <- merged_data %>%
+  mutate(
+    expected_value = ifelse(row_number() == 182, 167.51, expected_value),
+    value_delta = ifelse(row_number() == 182, 40.7778802, value_delta)
+  )
+
+# Print or save the updated merged_data dataframe
+head(merged_data)  # To display the first few rows
+
+
+#get team performance
+
+
+# Group the data by team_name and calculate the sum of value_delta
+team_sum_value_delta <- merged_data %>%
+  group_by(team_name) %>%
+  summarize(total_value_delta = sum(value_delta, na.rm = TRUE)) %>%
+  ungroup()
+
+# Print or save the team_sum_value_delta dataframe
+head(team_sum_value_delta)  # To display the first few rows
+
+
+```
+
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
