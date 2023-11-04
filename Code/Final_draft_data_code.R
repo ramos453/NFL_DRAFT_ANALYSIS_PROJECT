@@ -157,85 +157,6 @@ summary(df_temp)
 #Note: To avoid running the for loop above (~10 minutes), the file is written as a csv for further analysis 
 write.csv(df_temp, file = "df_draft_associated_v1.csv", row.names = FALSE)
 
-
-
-#Sentiment KeyWord Analysis ---------------------------------------------------------------------------------------------------------------------------------------------
-
-# Copy of cleaned data
-data <- read.csv("df_draft_associated_v1.csv",header=TRUE)
-
-data <- df_temp
-
-# sentiment lexicons
-lexicon <- get_sentiments("afinn")
-
-# Reads custom sentiment lexicon 
-custom_lexicon <- read_excel("sentiment_keywords.xlsx")
-
-# Combines lexicons
-combined_lexicon <- bind_rows(lexicon, custom_lexicon)
-
-# Renames the "word" column to "bigram"
-combined_lexicon <- combined_lexicon %>%
-  rename(bigram = word)
-
-# Tokenizing data 
-data_tokens <- data %>%
-  unnest_tokens(bigram, text, token = "ngrams", n = 2)
-
-# Joining the tokenized data with the combined sentiment lexicon
-sentiments <- data_tokens %>%
-  inner_join(combined_lexicon, by = "bigram")
-
-# Calculate sentiment scores for each bigram
-sentiment_score <- sentiments %>%
-  group_by(bigram) %>%
-  summarize(sentiment_score = sum(value))
-
-# Calculate word frequency for the bigrams
-word_frequency <- data_tokens %>%
-  count(bigram, sort = TRUE)
-
-# Combine the sentiment scores with the word frequency
-sentiment_score <- sentiment_score %>%
-  left_join(word_frequency, by = "bigram")
-
-# Arrange the results in descending order of frequency
-sentiment_score <- sentiment_score %>%
-  arrange(desc(n))
-View(sentiment_score)
-
-# Copy the cleaned data again
-data <- df_temp
-combined_results <- data.frame()
-
-# Specify different phrase lengths to analyze
-phrase_lengths <- c(2, 3, 4, 5, 6)
-
-# Iterate through different phrase lengths
-for (n in phrase_lengths) {
-  # Tokenize the text into n-grams
-  data_tokens <- data %>%
-    unnest_tokens(phrase, text, token = "ngrams", n = n)
-  
-  # Calculate word frequency for the n-grams
-  word_frequency <- data_tokens %>%
-    count(phrase, sort = TRUE)
-
-  # Append the results to the combined data frame  
-  combined_results <- bind_rows(combined_results, word_frequency)
-}
-
-# Arrange the results in descending order of frequency
-combined_results <- combined_results %>%
-  arrange(desc(n))
-View(combined_results)
-
-# Write the original cleaned data to a CSV file
-write.csv(df_temp, "comments_associated.csv", row.names=FALSE)
-
-
-
 #Team Sentiment Analysis -----------------------------------------------------------------------------------------------------------------------------
 
 df_team_sentiment <- read.csv("df_draft_associated_v1.csv",header=TRUE)
@@ -276,7 +197,6 @@ for (team in unique_teams) {
   summary_list[[team]] <- list(Summary = team_summary, Count = count, Proportion = proportion)
 }
 
-
 #Summary statistics for each team, including count of comments and overall proportion of comments
 for (team in unique_teams) {
   cat("Summary Statistics for", team, " (Count:", summary_list[[team]]$Count, ", Proportion:", summary_list[[team]]$Proportion, "):\n")
@@ -284,14 +204,15 @@ for (team in unique_teams) {
   cat("\n") }
 
 #Correlation between proportion of comments and average sentiment
-overall_count <- nrow(df_team_sentiment)
-unique_teams <- unique(df_team_sentiment$Team.Fan)
+overall_count <- nrow(df_temp)
+unique_teams <- unique(df_temp$Team.Fan)
+
 team_proportion <- numeric(length(unique_teams))
 team_avg_sentiment <- numeric(length(unique_teams))
 
 for (i in 1:length(unique_teams)) {
   team <- unique_teams[i]
-  team_data <- df_team_sentiment[df_team_sentiment$Team.Fan == team, ]
+  team_data <- df_temp[df_temp$Team.Fan == team, ]
   
   # Calculate proportion
   team_count <- nrow(team_data)
@@ -306,80 +227,25 @@ scatter_data <- data.frame(
   Proportion = team_proportion,
   AvgSentiment = team_avg_sentiment
 )
+scatter_data <- na.omit(scatter_data)
+lm_model <- lm(AvgSentiment ~ Proportion, data = scatter_data)
+rsq <- summary(lm_model)$r.squared
 
 ggplot(scatter_data, aes(x = Proportion, y = AvgSentiment, label = Team)) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE) +
   geom_text(hjust = -0.2, vjust = 0.3, size = 3) +
+  geom_text(x = max(scatter_data$Proportion), y = max(scatter_data$AvgSentiment),
+            label = paste("R-squared = ", round(rsq, 2)),
+            hjust = 1, vjust = 1, size = 4) +
   labs(
     title = "Proportion vs. Average Sentiment",
     x = "Proportion of Count",
     y = "Average Sentiment"
-  )
+  )+
+  xlim(0, max(scatter_data$Proportion))
 
 team_avg_sentiment
-
-#The same as above but associated with the draft (by associated pick) team
-
-summary_list2 <- list()
-unique_teams2 <- unique(df_team_sentiment$associated_team)
-#overall_count <- nrow(df_team_sentiment)
-for (team in unique_teams2) {
-  team_data <- df_team_sentiment[df_team_sentiment$associated_team == team, ]
-  team_summary <- summary(team_data$sentiment)
-  count <- length(team_data$sentiment)
-  proportion <- count / overall_count
-  p <- ggplot(team_data, aes(x = associated_team, y = sentiment, fill = associated_team)) +
-    geom_violin() +
-    scale_fill_manual(values = setNames(rainbow(length(unique_teams)), unique_teams)) +
-    labs(title = paste("Sentiment Violin Plot for", team))
-  
-  print(p)
-  
-  summary_list2[[team]] <- list(Summary = team_summary, Count = count, Proportion = proportion)
-}
-
-for (team in unique_teams2) {
-  cat("Summary Statistics for", team, " (Count:", summary_list2[[team]]$Count, ", Proportion:", summary_list2[[team]]$Proportion, "):\n")
-  print(summary_list2[[team]]$Summary)
-  cat("\n")
-}
-
-overall_count <- nrow(df_team_sentiment)
-unique_teams <- unique(df_team_sentiment$associated_team)
-team_proportion <- numeric(length(unique_teams))
-team_avg_sentiment <- numeric(length(unique_teams))
-for (i in 1:length(unique_teams)) {
-  team <- unique_teams[i]
-  team_data <- df_team_sentiment[df_team_sentiment$associated_team == team, ]
-  
-  # Calculate proportion
-  team_count <- nrow(team_data)
-  team_proportion[i] <- team_count / overall_count
-  
-  # Calculate average sentiment
-  team_avg_sentiment[i] <- mean(team_data$sentiment, na.rm = TRUE)
-}
-scatter_data <- data.frame(
-  Team = unique_teams,
-  Proportion = team_proportion,
-  AvgSentiment = team_avg_sentiment
-)
-ggplot(scatter_data, aes(x = Proportion, y = AvgSentiment, label = Team)) +
-  geom_point() +
-  geom_smooth(method = "lm", se = FALSE) +
-  geom_text(hjust = -0.2, vjust = 0.3, size = 3) +
-  labs(
-    title = "Proportion vs. Average Sentiment",
-    x = "Proportion of Count",
-    y = "Average Sentiment"
-  )
-
-#Some notes on the data cleaning and analysis process:
-#From initial cleaning, data is time stamped and not necessarily associated directly with a draft pick. Finding other ways, either by associating with the prior pick or with the commenter's team is important.
-#There were (proportionally) large differences in both the average sentiments of different teams as well as the number of comments they received. It will be interesting to consider both as factors.
-#More comments seems to correlate with a higher average team sentiment when comments are associated with a team by draft pick. When associating by the commenter's team affiliation this correlation reverses. This will be something to keep in mind when deciding how to bring in comment variables.
-
 
 # Player Name Analysis --------------------------------------------------------------------------------------------
 
