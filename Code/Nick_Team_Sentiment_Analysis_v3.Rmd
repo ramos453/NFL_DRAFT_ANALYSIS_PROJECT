@@ -1,0 +1,156 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(readxl)
+library(ggplot2)
+library(ggridges)
+
+
+setwd(r"{E:\OMSA\Semesters\01_Fall_23\MGMT 6203\Group Project\Code}")
+df_team_sentiment <- read.csv("df_draft_associated_v1.csv",header=TRUE)
+
+View(df_team_sentiment)
+```
+
+
+```{r}
+#Sentiment distribution by team, all look very similar
+ggplot(df_team_sentiment, aes(x = sentiment, y = Team.Fan, fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 3, size = 0.3, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Sentiment", option = "C") +
+  labs(title = 'Sentiment Distribution by Team')
+
+ggplot(df_team_sentiment, aes(x = sentiment)) +
+  geom_density(fill = "blue") +  # Adjust fill color as needed
+  facet_wrap(~Team.Fan)  # Creates separate plots for each team
+```
+
+```{r}
+#Violin plots for teams. Most look similar but some (unsurprisingly PHI who has a notoriously tough fan base) have a more negative skew.
+summary_list <- list()
+unique_teams <- unique(df_team_sentiment$Team.Fan)
+overall_count <- nrow(df_team_sentiment)
+for (team in unique_teams) {
+  team_data <- df_team_sentiment[df_team_sentiment$Team.Fan == team, ]
+  
+  team_summary <- summary(team_data$sentiment)
+  
+  count <- length(team_data$sentiment)
+  proportion <- count / overall_count
+  
+  # Create a violin plot for the current team
+  p <- ggplot(team_data, aes(x = Team.Fan, y = sentiment, fill = Team.Fan)) +
+    geom_violin() +
+    scale_fill_manual(values = setNames(rainbow(length(unique_teams)), unique_teams)) +
+    labs(title = paste("Sentiment Violin Plot for", team))
+  
+  # Print or save the plot (you can customize this part)
+  print(p)
+  
+  # Store the summary statistics and count in the list
+  summary_list[[team]] <- list(Summary = team_summary, Count = count, Proportion = proportion)
+}
+```
+
+```{r}
+#Summary statistics for each team, including count of comments and overall proportion of comments
+for (team in unique_teams) {
+  cat("Summary Statistics for", team, " (Count:", summary_list[[team]]$Count, ", Proportion:", summary_list[[team]]$Proportion, "):\n")
+  print(summary_list[[team]]$Summary)
+  cat("\n") }
+
+#Correlation between proportion of comments and average sentiment
+overall_count <- nrow(df_temp)
+unique_teams <- unique(df_temp$Team.Fan)
+
+team_proportion <- numeric(length(unique_teams))
+team_avg_sentiment <- numeric(length(unique_teams))
+
+for (i in 1:length(unique_teams)) {
+  team <- unique_teams[i]
+  team_data <- df_temp[df_temp$Team.Fan == team, ]
+  
+  # Calculate proportion
+  team_count <- nrow(team_data)
+  team_proportion[i] <- team_count / overall_count
+  
+  # Calculate average sentiment
+  team_avg_sentiment[i] <- mean(team_data$sentiment, na.rm = TRUE)
+}
+
+```
+
+
+```{r}
+
+
+# Assuming you have a dataframe called df_teams to store the summary statistics
+df_teams <- data.frame(Team = character(),
+                      Count = numeric(),
+                      Proportion = numeric(),
+                      Mean = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Iterate over unique_teams and populate the dataframe
+for (team in unique_teams) {
+  team_summary <- summary_list[[team]]
+  
+  # Append a new row to the dataframe with the summary statistics
+  df_teams <- rbind(df_teams, c(team, 
+                                team_summary$Count, 
+                                team_summary$Proportion,
+                                team_summary$Summary[4]))
+}
+
+# Rename the columns
+colnames(df_teams) <- c("Team", "Count", "Proportion","Mean")
+
+# Print the resulting dataframe
+View(df_teams)
+
+# Assuming df_team_sentiment is your existing dataframe
+# Merge df_team_sentiment with df_teams based on the "Team" and "Team.Fan" fields
+merged_df <- merge(df_team_sentiment, df_teams, by.x = "Team.Fan", by.y = "Team", all.x = TRUE)
+
+# Print the resulting merged dataframe
+View(merged_df)
+
+```
+
+```{r}
+summary_list[['ARI']]$Count
+
+```
+
+
+
+```{r}
+scatter_data <- data.frame(
+  Team = unique_teams,
+  Proportion = team_proportion,
+  AvgSentiment = team_avg_sentiment
+)
+scatter_data <- na.omit(scatter_data)
+lm_model <- lm(AvgSentiment ~ Proportion, data = scatter_data)
+rsq <- summary(lm_model)$r.squared
+
+ggplot(scatter_data, aes(x = Proportion, y = AvgSentiment, label = Team)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(hjust = -0.2, vjust = 0.3, size = 3) +
+  geom_text(x = max(scatter_data$Proportion), y = max(scatter_data$AvgSentiment),
+            label = paste("R-squared = ", round(rsq, 2)),
+            hjust = 1, vjust = 1, size = 4) +
+  labs(
+    title = "Proportion vs. Average Sentiment",
+    x = "Proportion of Count",
+    y = "Average Sentiment"
+  )+
+  xlim(0, max(scatter_data$Proportion))
+
+team_avg_sentiment
+
+```
