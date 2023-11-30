@@ -1,0 +1,174 @@
+---
+title: "Variable Selection"
+output: html_notebook
+---
+
+```{r Import Data and Necessary Libraries}
+library(dplyr)
+library(MCMCglmm)
+library(glmnet)
+library(ModelMetrics)
+
+#Import all of the proper datasets
+draft_df <- read.csv('all_data.csv')
+draft_avg <- read.csv('pos_avg_pick.csv')
+
+#Fix the position data from the 2020 draft data
+draft_df['position'][draft_df['position'] == 'HB'] <- "RB"
+draft_df['position'][draft_df['position'] == 'ED'] <- "DE"
+draft_df['position'][draft_df['position'] == 'DI'] <- "DL"
+
+#NAs for position data filled
+draft_df['position'][9,'position'] <- "CB"
+draft_df['position'][16,'position'] <- "CB"
+draft_df['position'][23,'position'] <- "LB"
+draft_df['position'][63,'position'] <- "LB"
+draft_df['position'][80,'position'] <- "WR"
+draft_df['position'][128,'position'] <- "WR"
+draft_df['position'][152,'position'] <- "S"
+draft_df['position'][170,'position'] <- "DL"
+draft_df['position'][177,'position'] <- "DE"
+draft_df['position'][182,'position'] <- "G"
+draft_df['position'][185,'position'] <- "LS"
+draft_df['position'][201,'position'] <- "WR"
+draft_df['position'][221,'position'] <- "CB"
+draft_df['position'][248,'position'] <- "K"
+draft_df['position'][250,'position'] <- "G"
+```
+
+```{r Clean data}
+set.seed(123)
+#Drop some extra Columns
+drop_cols = !names(draft_df) %in% c('pick.y', 'round.y', 'associated_round', 'associated_pick', 'associated_team', 'draft_team', 'team_name', 'player_id', 'ID', 'year', 'draft_year','draft_round', 'draft_pick')
+cleaner_df <- draft_df[,drop_cols]
+
+#Set up the distance to position average
+cleaner_df['Pos_Avg'] <- 0 
+
+#Removed Rows from NAs
+cleaner_df <- cleaner_df[c(-31, -32, -78, -107, -108),]
+
+#Put the Mean Draft Selection for each Position in
+for (row in 1:nrow(cleaner_df)){
+  
+  cur_pos <- cleaner_df[row, 'position']
+  cleaner_df[row,'Pos_Avg'] <- draft_avg[draft_avg$Position == cur_pos,][,'Mean_Pick']
+  
+}
+#Distance to Position Selected
+cleaner_df['Dist_to_Pos_Avg'] = cleaner_df$Pos_Avg - cleaner_df$pick.x
+
+#Fix all NaNs
+cleaner_df[is.na(cleaner_df)] <- 0
+```
+
+```{r Select Proper Columns and Split into train and test}
+#All the columns that could be used in the final model more can be added and some can be removed. If you do not want a column in the final model you have to remove it otherwise it will be added to the maximum size model
+wanted_columns = names(cleaner_df) %in% c('count_text', 'mean_sentiment', 'Count', 'Proportion', 'Mean', 'offensive_word_count', 'row_count', 'Direct_mentions', 'Indirect_mentions', 'avg_sentiment_direct_mentions', 'avg_sentiment_indirect_mentions', 'Direct_mention_binary', 'Dist_to_Pos_Avg',  'value_delta')
+
+#Final Df for the Regression Analysis
+lin_reg_df <- cleaner_df[, wanted_columns]
+
+#Split into train and test samples
+sample <- sample(c(TRUE, FALSE), nrow(lin_reg_df), replace=TRUE, prob=c(0.8,0.2))
+train  <- lin_reg_df[sample, ]
+test   <- lin_reg_df[!sample, ]
+
+#Maximum and Minimum models for the Variable Selection
+max.model <- lm(value_delta~., data = train)
+min.model <- lm(value_delta~ mean_sentiment + Mean + avg_sentiment_direct_mentions, data = train)
+```
+
+```{r Forward Stepwise Selection}
+#Complete the forward stepwise model
+forward.model <- step(min.model, scope = list(lower = min.model, upper = max.model), direction = 'forward', trace = 0)
+
+#Print out the final model
+summary(forward.model)
+
+#Prediction for testing
+for.pred <- predict(forward.model, newdata = test)
+forward_rmse <- rmse(test$value_delta, for.pred)
+forward_mse <- mse(test$value_delta, for.pred)
+forward_r2 <- summary(forward.model)$adj.r.squared
+
+#Put all of the test metrics into a dataframe for printing
+forward_results <- paste0('Forward Results \n','RMSE: ', forward_rmse, "\n", 'MSE: ', forward_mse, "\n", 'R Squared: ', forward_r2)
+
+```
+
+```{r Backward Stepwise Selection}
+#Complete the Backward Stepwise Model
+backward.model <- step(max.model, scope = list(lower = min.model, upper = max.model), direction = 'backward', trace = 0)
+
+#Printout the final model
+summary(backward.model)
+
+#Prediction Test Metrics
+back.pred <- predict(backward.model, newdata = test)
+backward_rmse <- rmse(test$value_delta, back.pred)
+backward_mse <- mse(test$value_delta, back.pred)
+backward_r2 <- summary(backward.model)$adj.r.squared
+
+#Put test metrics into dataframe
+backward_results <- paste0('\n\nBackward Results \n','RMSE: ', backward_rmse, "\n", 'MSE: ', backward_mse, "\n", 'R Squared: ', backward_r2)
+```
+
+```{r Forward and Backward Selection}
+#Both ways Modeling
+both.model <- step(max.model, scope = list(lower = min.model, upper = max.model), direction = 'both', trace = 0)
+
+#Printout of final model
+summary(both.model)
+
+#Prediction Test Metrics
+both.pred <- predict(both.model, newdata = test)
+both_rmse <- rmse(test$value_delta, both.pred)
+both_mse <- mse(test$value_delta, both.pred)
+both_r2 <- summary(both.model)$adj.r.squared
+
+#Put Test Metrics into dataframe
+both_results <- paste0('\n\nBoth Ways Results \n','RMSE: ', both_rmse, "\n", 'MSE: ', both_mse, "\n", 'R Squared: ', both_r2)
+```
+
+```{r Elastic Net Selection}
+#Setup for the elastic net 
+models <- list()
+results <- data.frame()
+alphas <- c(0, .05,  0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1)
+
+#Loop that creates new models for each alpha and takes the results
+for (alp in 1:length(alphas)){
+  
+  #Current Alpha
+  cur_alp <- alphas[alp]
+  name <- paste0('alpha ', cur_alp)
+  
+  #Put models into list for easy access
+  models[[name]] <- glmnet(train[,-12], train$value_delta, alpha = cur_alp)
+  
+  #Predict the final data
+  elas.pred <- predict(models[[name]], s = models[[name]]$lambda, newx = as.matrix(test[,-12]))
+  
+  #Test Metrics
+  elas_rmse <- rmse(test$value_delta, elas.pred)
+  elas_mse <- mse(test$value_delta, elas.pred)
+  elas_r2 <- summary(forward.model)$adj.r.squared
+  
+  #Dataframe row to be added
+  temp <- data.frame(alpha = cur_alp, rmse = elas_rmse, mse = elas_mse, elas_r2 = elas_r2, name=name)
+  
+  results <- rbind(results, temp)
+}
+
+print(results)
+```
+
+```{r Printouts}
+
+cat(forward_results)
+
+cat(backward_results)
+
+cat(both_results)
+```
