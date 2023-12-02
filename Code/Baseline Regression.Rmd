@@ -1,0 +1,70 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(glmnet)
+
+setwd(r"{E:\OMSA\Semesters\01_Fall_23\MGMT 6203\Group Project\Models}")
+df_all_variables <- read.csv("data_all_variables.csv",header=TRUE)
+colnames(df_all_variables)
+```
+
+```{r}
+selected_columns <- c('round.x','pick.x','team','full_name','count_text','mean_sentiment','Count','Proportion','Mean','total_value_delta','row_count','Direct_mentions','Indirect_mentions','avg_sentiment_direct_mentions','avg_sentiment_indirect_mentions','Direct_mention_binary','position','player_game_count','percentage_games_played','grades_offense','raw_usage','usage_rate','raw_value_provided','sum_raw_value_provided','expected_value','value_delta')
+
+df_data <- df_all_variables[, selected_columns]
+
+unique(df_data$position)
+```
+
+```{r scatter}
+# Assuming df_data is your dataset
+# Replace 'pick.x', 'expected_value', and 'position' with your actual column names
+
+# Load the RColorBrewer library
+library(RColorBrewer)
+
+# Filter out missing values in the 'position' column
+df_data <- df_data[complete.cases(df_data$position), ]
+
+# Define the number of colors and the color palette
+num_colors <- length(unique(df_data$position))
+position_colors <- brewer.pal(num_colors, "Set1")
+
+# Create a new graphics window
+par(mfrow = c(2, 2))  # Adjust the layout based on the number of unique positions
+
+# Iterate through each position
+for (pos in unique(df_data$position)) {
+  # Subset the data for the current position
+  subset_data <- subset(df_data, position == pos)
+
+  # Scatter plot for the current position
+  plot(subset_data$pick.x, subset_data$expected_value, 
+       col = position_colors[as.factor(pos)],
+       pch = 16,  # Use a different symbol if you prefer
+       main = paste("Scatter Plot for", pos),
+       xlab = "pick.x",
+       ylab = "expected_value")
+}
+
+# Reset the graphics window layout
+par(mfrow = c(1, 1))
+
+
+```
+
+
+```{r}
+# positions <- list("QB","ED",c("CB","S"),"OL","DI","WR","LB","HB","TE")
+# subset_data <- subset(df_data, position %in% positions)
+# selected_x <- c('round.x')
+# XP <- data.matrix(subset_data[, selected_x])
+ 
+naive_regression <- lm(expected_value ~ round.x + position, data = df_data)
+ 
+summary(naive_regression)
+```
