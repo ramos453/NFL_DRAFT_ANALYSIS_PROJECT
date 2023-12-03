@@ -43,7 +43,7 @@ par(mfrow = c(1, 1))
 
 
 ```{r}
-naive_regression <- lm(sum_raw_value_provided ~ round.x + position, data = df_data)
+naive_regression <- lm(sum_raw_value_provided ~ expected_value, data = df_data)
 summary(naive_regression)
 ```
 
@@ -124,7 +124,7 @@ cat("Adjusted R-squared with Optimal Scaling Factor:",
 original_predictions <- predict(naive_regression)
 residual_predictions <- predict(residual_lm)
 
-scaling_factor <- 0.5
+scaling_factor <- 0.3
 scaled_residual_predictions <- scaling_factor * residual_predictions
 combined_predictions <- original_predictions + scaled_residual_predictions
 
