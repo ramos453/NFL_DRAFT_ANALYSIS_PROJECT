@@ -1,0 +1,146 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(glmnet)
+library(RColorBrewer)
+
+setwd(r"{E:\OMSA\Semesters\01_Fall_23\MGMT 6203\Group Project\Models}")
+df_all_variables <- read.csv("merged_data_1.csv",header=TRUE)
+colnames(df_all_variables)
+```
+
+```{r}
+selected_columns <- c('round.x','pick.x','team','full_name','count_text','mean_sentiment','Count','Proportion','Mean','total_value_delta','row_count','Direct_mentions','Indirect_mentions','avg_sentiment_direct_mentions','avg_sentiment_indirect_mentions','Direct_mention_binary','position','player_game_count','percentage_games_played','grades_offense','raw_usage','usage_rate','raw_value_provided','sum_raw_value_provided','expected_value','value_delta')
+
+df_data <- df_all_variables[, selected_columns]
+
+unique(df_data$position)
+```
+
+```{r scatter}
+
+df_data <- df_data[complete.cases(df_data$position), ]
+num_colors <- length(unique(df_data$position))
+position_colors <- brewer.pal(num_colors, "Set1")
+
+par(mfrow = c(2, 2))
+
+for (pos in unique(df_data$position)) {
+  subset_data <- subset(df_data, position == pos)
+
+  plot(subset_data$pick.x, subset_data$expected_value, 
+       col = position_colors[as.factor(pos)],
+       pch = 16,  # Use a different symbol if you prefer
+       main = paste("Scatter Plot for", pos),
+       xlab = "pick.x",
+       ylab = "expected_value")
+}
+
+par(mfrow = c(1, 1))
+```
+
+
+```{r}
+naive_regression <- lm(expected_value ~ round.x + position, data = df_data)
+summary(naive_regression)
+```
+
+
+
+```{r}
+residuals <- resid(naive_regression)
+
+selected_x <- c('mean_sentiment','avg_sentiment_indirect_mentions')
+XP <- data.matrix(df_data[, selected_x])
+residual_data <- data.frame(residuals, x3 = XP)
+
+residual_lm <- lm(residuals ~ XP, data = residual_data)
+summary(residual_lm)
+```
+
+
+```{r}
+plot(df_data$pick.x, residuals, main = "Residuals of the Original Linear Model",
+     xlab = "Predictor x1", ylab = "Residuals")
+abline(h = 0, col = "red", lty = 2)
+
+```
+
+
+```{r}
+original_predictions <- predict(naive_regression)
+residual_predictions <- predict(residual_lm)
+
+scaling_factor <- 0  # Adjust the scaling factor as needed
+scaled_residual_predictions <- scaling_factor * residual_predictions
+combined_predictions <- original_predictions + scaled_residual_predictions
+
+selected_x <- c('mean_sentiment','avg_sentiment_indirect_mentions','round.x', 'position')
+XP <- data.matrix(df_data[, selected_x])
+
+combined_model <- lm(expected_value ~ combined_predictions, data = df_data)
+
+summary(combined_model)
+
+```
+
+```{r}
+
+scaling_factors <- seq(-2, 2, by = 0.1)
+adjusted_r_squared_values <- numeric(length(scaling_factors))
+
+for (i in seq_along(scaling_factors)) {
+  scaling_factor <- scaling_factors[i]
+  
+  original_predictions <- predict(naive_regression)
+  
+  residual_predictions <- predict(residual_lm)
+  
+  scaled_residual_predictions <- scaling_factor * residual_predictions
+  
+  combined_predictions <- original_predictions + scaled_residual_predictions
+  
+  combined_model <- lm(expected_value ~ combined_predictions, data = df_data)
+  
+  adjusted_r_squared_values[i] <- summary(combined_model)$adj.r.squared
+}
+
+# Plot the results
+plot(scaling_factors, adjusted_r_squared_values, type = "l",
+     main = "Adjusted R-squared vs. Scaling Factor",
+     xlab = "Scaling Factor", ylab = "Adjusted R-squared")
+
+# Find the optimal scaling factor
+optimal_scaling_factor <- scaling_factors[which.max(adjusted_r_squared_values)]
+cat("Optimal Scaling Factor:", optimal_scaling_factor, "\n")
+cat("Adjusted R-squared with Optimal Scaling Factor:",
+    max(adjusted_r_squared_values), "\n")
+```
+
+```{r}
+
+original_predictions <- predict(naive_regression)
+residual_predictions <- predict(residual_lm)
+
+scaling_factor <- 0.5
+scaled_residual_predictions <- scaling_factor * residual_predictions
+combined_predictions <- original_predictions + scaled_residual_predictions
+
+selected_x <- c('mean_sentiment','avg_sentiment_indirect_mentions','round.x', 'position')
+XP <- data.matrix(df_data[, selected_x])
+
+combined_model <- lm(expected_value ~ combined_predictions, data = df_data)
+
+model_summary <- summary(combined_model)
+original_summary <- summary(original_predictions)
+residual_summary <- summary(residual_predictions)
+
+print(model_summary)
+print(naive_regression)
+print(residual_lm)
+
+```
