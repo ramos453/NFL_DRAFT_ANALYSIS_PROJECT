@@ -1,0 +1,596 @@
+---
+title: "HW 5"
+author: "Hugh Hoagland"
+date: "2022-09-29"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+model_data <- na.omit(model_data)
+
+#look for non-linearity
+
+plot(model_data$value_delta, model_data$mean_sentiment, main = "Mean Sentiment vs Value Delta", xlab = "Value Delta", ylab = "Mean Sentiment")
+
+plot(model_data$value_delta, log(model_data$mean_sentiment), main = "LogMean Sentiment vs Value Delta", xlab = "Value Delta", ylab = "LogMean Sentiment")
+
+#nothing immediately jumps oit but it looks like there may be some heteroskedacity at higher values of Value Delta, we can come back to this
+
+
+plot(model_data$value_delta, model_data$Count, main = "Count vs Value Delta", xlab = "Value Delta", ylab = "Count")
+
+plot(model_data$value_delta, log(model_data$Count), main = "LogCount vs Value Delta", xlab = "Value Delta", ylab = "LogCount")
+
+#again noThing immediately jumps out but its's interesting there seem to be very specific bands that form around certain levels of "Count" and around these bands there are clusters of observations --> will come back to this
+
+
+names(model_data)
+
+full_lm <- lm(value_delta~count_text+mean_sentiment+Count+Proportion+Mean+Direct_mentions+Indirect_mentions+avg_sentiment_direct_mentions+avg_sentiment_indirect_mentions+Direct_mention_binary, data = model_data)
+
+summary(full_lm)
+
+
+basic_lm <- lm(value_delta~mean_sentiment+Direct_mentions+avg_sentiment_indirect_mentions, data = model_data)
+
+summary(basic_lm)
+
+
+vanilla_model <- lm(value_delta ~ 1, data = model_data)
+
+summary(vanilla_model)
+
+
+#create a heteroscadicity plot
+
+plot(basic_lm, which = 3, col = "blue", pch = 16, main = "Heteroscedasticity Plot")
+
+
+#qqplot
+
+# Extract standardized residuals
+std_residuals <- rstandard(basic_lm)
+
+# Create a Q-Q plot
+dev.new()
+
+# Create a Q-Q plot
+qqnorm(std_residuals)
+qqline(std_residuals, col = 2)
+
+# Optional: Add title and axis labels
+title("Normal Q-Q Plot for Standardized Residuals")
+xlabel <- ifelse(length(std_residuals) > 10, "Theoretical Quantiles", "Sample Quantiles")
+ylabel <- "Standardized Residuals"
+
+#everything looks pretty good honestly, there is no systematic pattern, I just don't think it's a linear relationship at all with any of the vars. I don't thinks theres any major relationship but lets look, focussing on the three vars from the "basic" model
+
+
+plot(model_data$value_delta, model_data$avg_sentiment_indirect_mentions, main = "Indirect Sentiment vs Value Delta", xlab = "Value Delta", ylab = "Indirect Sentiment")
+
+
+#no patterns lol
+
+plot(model_data$value_delta, model_data$Direct_mentions, main = "Direct Mentions vs Value Delta", xlab = "Value Delta", ylab = "Direct Mentions")
+
+
+#it appears jordan love and henry ruggs are making direct mentions less valuable than it could be by being extreme outliers. Their careers both have strange circumstances lets remove them and try the model again
+
+model_data2 <- subset(model_data, full_name != "Jordan Love" & full_name != "Henry Ruggs III")
+
+
+basic_lm2 <- lm(value_delta~mean_sentiment+Direct_mentions+avg_sentiment_indirect_mentions, data = model_data2)
+
+summary(basic_lm2)
+
+simplest_lm <- lm(value_delta~Direct_mentions, data = model_data2)
+
+summary(simplest_lm)
+
+#best rsqu yet, just for fun let's look at some interaction terms
+
+interaction_lm <- lm(value_delta~mean_sentiment+Direct_mentions+avg_sentiment_indirect_mentions+Direct_mentions*avg_sentiment_indirect_mentions+mean_sentiment*Direct_mentions+avg_sentiment_indirect_mentions*mean_sentiment, data = model_data)
+
+summary(interaction_lm)
+
+interaction_lm2 <- lm(value_delta~Direct_mentions+avg_sentiment_indirect_mentions+Direct_mentions*avg_sentiment_indirect_mentions, data = model_data)
+
+summary(interaction_lm2)
+
+#That was slightly better, but it's clear we aren't getting a great model from linear regression. Let's try a polynomial regression
+
+poly_model <- lm(value_delta ~ poly(count_text+mean_sentiment+Count+Proportion+Mean+Direct_mentions+Indirect_mentions+avg_sentiment_direct_mentions+avg_sentiment_indirect_mentions+Direct_mention_binary, degree = 2), data = model_data)
+
+summary(poly_model)
+
+simple_poly_model <- lm(value_delta ~ poly(Direct_mentions+avg_sentiment_indirect_mentions, degree = 3), data = model_data)
+
+summary(simple_poly_model)
+
+#trash, let's try a GAM model
+install.packages("nlme")
+install.packages("mgcv")
+library(mgcv)
+
+gam_model <- gam
+
+summary(gam_model)
+
+#loess smoothing
+
+loess_model <- loess(value_delta ~ mean_sentiment, data = model_data)
+
+summary(loess_model)
+
+#NLS
+
+nls_model <- nls_model <- nls(value_delta ~ a * exp(b * x), data = df, start = list(a = 1, b = 1))
+
+
+#Nope, let's take a look back at linear regression
+
+install.packages("pdp")
+install.packages("gridExtra")
+library(pdp)
+library(gridExtra)
+
+
+variables <- names(coef(full_lm)[-1])  # Exclude intercept term
+
+# Create a grid of partial dependence plots for all variables
+pdp_grid <- lapply(variables, function(var) {
+  pdp::partial(full_lm, pred.var = var)
+})
+
+
+grid.arrange(grobs = lapply(pdp_grid, function(pdp) plot(pdp)), ncol = 2)
+
+#there seem to be some very powerful linear relationships actually, they are just at odds with each other, effectively cancelling each othe rout
+
+
+correlation_df <- model_data[, c("Direct_mentions", "avg_sentiment_indirect_mentions", "mean_sentiment")]
+
+cormatrix <- cor(correlation_df)
+
+install.packages("corrplot")
+library(corrplot)
+
+corrplot(cormatrix, method = "color")
+
+
+#it's an interesting situation indeed, it does not appear a linear model will work in this scenario, let's try my best attempt at a NN model
+
+
+install.packages("neuralnet")
+library(neuralnet)
+
+
+nn_model <- neuralnet(value_delta~Direct_mentions+avg_sentiment_indirect_mentions, data = model_data, linear.output = TRUE)
+
+
+predictions <- predict(nn_model, newdata = model_data)
+
+
+predictions
+
+# maybe it was picking up on some patterns? But I don't have time to work through and find an architecture that might actually work. Random forest?
+
+
+set.seed(123)
+
+
+n_rows <- nrow(model_data)
+
+
+train_size <- round(0.8 * n_rows)
+
+# Randomly select indices for the training set
+train_indices <- sample(1:n_rows, train_size, replace = FALSE)
+
+# Create training and testing dataframes
+train_data <- model_data[train_indices, ]
+test_data <- model_data[-train_indices, ]
+
+install.packages("randomForest")
+library(randomForest)
+rf_model <- randomForest(value_delta ~ Direct_mentions+avg_sentiment_indirect_mentions, data = train_data)
+
+rf_model
+
+predictions <- predict(rf_model, test_data)
+
+# Calculate R-squared-like metric
+rsquared_like <- 1 - sum((test_data$value_delta - predictions)^2) / sum((test_data$value_delta - mean(test_data$value_delta))^2)
+
+# Print the result
+print(rsquared_like)
+
+
+print(importance(rf_model))
+
+
+#NOOO one last shot. There seem to be these weird clusters when y is plotted against some X's maybe an SVM can describe the partitions
+
+
+
+install.packages("e1071")
+library(e1071)
+
+svm_model <- svm(value_delta ~ Direct_mentions*avg_sentiment_indirect_mentions, data = train_data, kernel = "radial")
+
+# Make predictions on the test set
+predictions <- predict(svm_model, newdata = test_data)
+
+rsquared_like <- 1 - sum((test_data$value_delta - predictions)^2) / sum((test_data$value_delta - mean(test_data$value_delta))^2)
+
+rsquared_like
+
+predictions
+
+
+plot(model_data$avg_sentiment_direct_mentions,model_data$avg_sentiment_indirect_mentions)
+
+
+
+#hcjcbdskcndlcknadcldnbc;sdkjbv;dskjvbd;kjdb;kdjbv;kjvbd;kjvb
+
+
+
+
+install.packages("caret")
+library(caret)
+
+rf1 <- randomForest(sum_raw_value_provided~expected_value, data = model_data)
+
+print(rf1)
+
+r_data <- predict(goat1,newdata = model_data)
+
+r_squared <- R2(r_data, model_data$sum_raw_value_provided)
+
+
+
+
+# Print the R-squared value
+print(paste("R-squared:", r_squared))
+
+
+insights <- predict(goat1,newdata = model_data)
+insight_data <- cbind(model_data,insights)
+
+
+goat2 <- randomForest(sum_raw_value_provided~insights+mean_sentiment+Direct_mentions, data = model_data)
+
+r_data2 <- predict(goat2, newdata = model_data)
+
+r_squared2 <- R2(r_data2, insight_data$expected_value)
+
+# Print the R-squared value
+print(paste("R-squared:", r_squared2))
+
+
+
+#This is the best we've been able to do. Uploading the updated combined data and then going to tune the best version of this I can. 
+
+
+library(caret)
+library(randomForest)
+
+find("train", mode="function")
+
+model_data1 <- na.omit(model_data1)
+
+
+
+ctrl <- trainControl(
+  method = "cv",       # Cross-validation
+  number = 5,           # Number of folds
+  search = "grid",
+     # Number of values to search for each tuning parameter
+)
+
+tuning_grid <- expand.grid(mtry = c(1, 2, 3))
+
+rf_model1 <- train(
+  sum_raw_value_provided ~ expected_value + round.y + position,
+  data = model_data1,
+  method = "rf",
+  tuneGrid= tuning_grid,  # Specify the tuning grid
+  trControl = ctrl
+)
+
+print(rf_model1)
+plot(rf_model1)
+
+layer1_model <- rf_model1
+
+
+layer1_model
+
+
+predictions_layer1rf <- predict(rf_model1, newdata = model_data1)
+
+# Create a new dataframe identical to model_data1 with the added predictions column
+new_data1 <- model_data1
+new_data1$predictions_layer1rf <- predictions_layer1rf
+
+
+layer1_lm0 <- lm(sum_raw_value_provided ~ round.y + expected_value + position, data = model_data1)
+
+summary(layer1_lm0)
+
+layer1_lm1 <- lm(sum_raw_value_provided ~ round.y + position, data = model_data1)
+
+summary(layer1_lm1)
+
+layer1_lm2 <- lm(sum_raw_value_provided ~ round.y , data = model_data1)
+
+summary(layer1_lm2)
+
+layer1_lm3 <- lm(sum_raw_value_provided ~ expected_value, data = model_data1)
+
+summary(layer1_lm3)
+
+
+predictions_layer1lm0 <- predict(layer1_lm0, newdata = model_data1)
+
+new_data1$predictions_layer1lm0 <- predictions_layer1lm0
+
+
+predictions_layer1lm1 <- predict(layer1_lm1, newdata = model_data1)
+
+new_data1$predictions_layer1lm1 <- predictions_layer1lm1
+
+
+#build layer 2 models
+
+#
+
+
+layer2_lm_rf_base <- lm(sum_raw_value_provided ~ predictions_layer1rf + Direct_mentions + avg_sentiment_indirect_mentions +mean_sentiment, data = new_data1 )
+
+summary(layer2_lm_rf_base)
+
+layer2_lm_rf_NULL <- lm(sum_raw_value_provided ~ predictions_layer1rf , data = new_data1 )
+
+summary(layer2_lm_rf_NULL)
+
+layer2_lm_rf_2pred <- lm(sum_raw_value_provided ~ predictions_layer1rf + avg_sentiment_indirect_mentions +mean_sentiment, data = new_data1 )
+
+summary(layer2_lm_rf_2pred)
+
+layer2_lm_rf_1pred <- lm(sum_raw_value_provided ~ predictions_layer1rf +mean_sentiment, data = new_data1 )
+
+summary(layer2_lm_rf_1pred)
+
+
+
+
+
+layer2_lm_lm0_base <- lm(sum_raw_value_provided ~ predictions_layer1lm0 + Direct_mentions + avg_sentiment_indirect_mentions +mean_sentiment, data = new_data1 )
+
+summary(layer2_lm_lm0_base)
+
+layer2_lm_lm0_NULL <- lm(sum_raw_value_provided ~ predictions_layer1lm0 , data = new_data1 )
+
+summary(layer2_lm_lm0_NULL)
+
+
+#the RF layer 1 is clearly better than the lm0 layer 1 at predicting move onto lm1
+
+layer2_lm_lm1_base <- lm(sum_raw_value_provided ~ predictions_layer1lm1 + Direct_mentions + avg_sentiment_indirect_mentions +mean_sentiment, data = new_data1 )
+
+summary(layer2_lm_lm1_base)
+
+layer2_lm_lm1_NULL <- lm(sum_raw_value_provided ~ predictions_layer1lm1 , data = new_data1 )
+
+summary(layer2_lm_lm1_NULL)
+
+#same here, the RF layer 1 has the best predictions, let's see if that holds up at layer 2 as well
+
+
+
+ctrl <- trainControl(
+  method = "cv",       # Cross-validation
+  number = 5,           # Number of folds
+  search = "grid",
+     # Number of values to search for each tuning parameter
+)
+
+tuning_grid <- expand.grid(mtry = c(1, 2, 3,4))
+
+rf_model2 <- train(
+  sum_raw_value_provided ~ predictions_layer1rf +  Direct_mentions + avg_sentiment_indirect_mentions +mean_sentiment,
+  data = new_data1,
+  method = "rf",
+  tuneGrid= tuning_grid,  # Specify the tuning grid
+  trControl = ctrl
+)
+
+print(rf_model2)
+plot(rf_model2)
+
+
+
+tuning_grid <- expand.grid(mtry = c(1, 2, 3))
+
+rf_model2.1 <- train(
+  sum_raw_value_provided ~ predictions_layer1rf + avg_sentiment_indirect_mentions +mean_sentiment,
+  data = new_data1,
+  method = "rf",
+  tuneGrid= tuning_grid,  # Specify the tuning grid
+  trControl = ctrl
+)
+
+print(rf_model2.1)
+plot(rf_model2.1)
+
+
+tuning_grid <- expand.grid(mtry = c(1, 2))
+
+rf_model2.2 <- train(
+  sum_raw_value_provided ~ predictions_layer1rf +mean_sentiment,
+  data = new_data1,
+  method = "rf",
+  tuneGrid= tuning_grid,  # Specify the tuning grid
+  trControl = ctrl
+)
+
+print(rf_model2.2)
+plot(rf_model2.2)
+
+
+
+
+
+
+
+
+
+
+
+
+#rf_model2.1 and layer2_lm_rf_NULL and layer2_lm_rf_base are the three best layer 2 models 
+
+
+set.seed(123)
+
+
+index <- createDataPartition(model_data1$sum_raw_value_provided, p = 0.8, list = FALSE)
+
+#split training and test
+
+final_train_data <- model_data1[index, ]
+final_test_data <- model_data1[-index, ]
+
+#create the layer 1 model
+
+ctrl <- trainControl(
+  method = "cv",       # Cross-validation
+  number = 5,           # Number of folds
+  search = "grid",
+     # Number of values to search for each tuning parameter
+)
+
+tuning_grid <- expand.grid(mtry = c(1, 2, 3))
+
+final_rf_model1 <- train(
+  sum_raw_value_provided ~ expected_value + round.y + position,
+  data = final_train_data,
+  method = "rf",
+  tuneGrid= tuning_grid,  # Specify the tuning grid
+  trControl = ctrl
+)
+
+print(rf_model1)
+plot(rf_model1)
+
+#save the layer 1 predictions to the training data as a new column
+
+final_layer1_model <- final_rf_model1
+
+
+final_layer1_model
+
+
+final_predictions_layer1rf <- predict(rf_model1, newdata = final_train_data)
+
+
+final_train_data$layer1pred <-final_predictions_layer1rf
+
+#Build the double random forest model
+
+tuning_grid <- expand.grid(mtry = c(1, 2, 3))
+
+rfrf_model <- train(
+  sum_raw_value_provided ~ layer1pred + avg_sentiment_indirect_mentions +mean_sentiment,
+  data = final_train_data,
+  method = "rf",
+  tuneGrid= tuning_grid,  # Specify the tuning grid
+  trControl = ctrl
+)
+
+print(rfrf_model)
+plot(rfrf_model)
+
+
+#build the rf lm no sentiment model
+
+rflm_NoSentiment_model <- lm(sum_raw_value_provided ~ layer1pred , data = final_train_data )
+
+summary(rflm_NoSentiment_model)
+
+
+#Build the rf lm sentiment model
+
+rflm_Sentiment_model <- lm(sum_raw_value_provided ~ layer1pred + Direct_mentions + avg_sentiment_indirect_mentions +mean_sentiment, data = final_train_data )
+
+summary(rflm_Sentiment_model)
+
+#now lets look at how all three fair against the test data
+
+predictionsL1 <- predict(rf_model1, newdata = final_test_data)
+
+
+final_test_data$layer1pred <-predictionsL1
+
+
+predictions_Sentiment <- predict(rflm_Sentiment_model, newdata = final_test_data)
+
+predictions_NoSentiment <- predict(rflm_NoSentiment_model, newdata = final_test_data)
+
+predictions_rf <- predict(rfrf_model, newdata = final_test_data)
+
+
+predictions_df <- data.frame(
+  Sentiment = predictions_Sentiment,
+  NoSentiment = predictions_NoSentiment,
+  rf_model = predictions_rf
+)
+
+
+print(predictions_df)
+
+actual_values <- final_test_data$sum_raw_value_provided
+
+rmse_Sentiment <- sqrt(mean((predictions_Sentiment - actual_values)^2))
+
+
+rmse_NoSentiment <- sqrt(mean((predictions_NoSentiment - actual_values)^2))
+
+
+rmse_rf <- sqrt(mean((predictions_rf - actual_values)^2))
+
+# Display RMSE for each model
+cat("RMSE for Sentiment Model:", rmse_Sentiment, "\n")
+cat("RMSE for No Sentiment Model:", rmse_NoSentiment, "\n")
+cat("RMSE for Random Forest Model:", rmse_rf, "\n")
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
