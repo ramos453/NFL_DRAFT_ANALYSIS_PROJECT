@@ -1,0 +1,147 @@
+---
+title: "HW 7"
+author: "Hugh Hoagland"
+date: "2022-10-13"
+output: word_document
+---
+
+```{r setup, include=TRUE}
+
+#rf_model2.1 and layer2_lm_rf_NULL and layer2_lm_rf_base are the three best layer 2 models 
+
+
+set.seed(123)
+
+
+index <- createDataPartition(model_data1$sum_raw_value_provided, p = 0.8, list = FALSE)
+
+#split training and test
+
+final_train_data <- model_data1[index, ]
+final_test_data <- model_data1[-index, ]
+
+#create the layer 1 model
+
+ctrl <- trainControl(
+  method = "cv",       # Cross-validation
+  number = 5,           # Number of folds
+  search = "grid",
+     # Number of values to search for each tuning parameter
+)
+
+tuning_grid <- expand.grid(mtry = c(1, 2, 3))
+
+final_rf_model1 <- train(
+  sum_raw_value_provided ~ expected_value + round.y + position,
+  data = final_train_data,
+  method = "rf",
+  tuneGrid= tuning_grid,  # Specify the tuning grid
+  trControl = ctrl
+)
+
+print(rf_model1)
+plot(rf_model1)
+
+#save the layer 1 predictions to the training data as a new column
+
+final_layer1_model <- final_rf_model1
+
+
+final_layer1_model
+
+
+final_predictions_layer1rf <- predict(rf_model1, newdata = final_train_data)
+
+
+final_train_data$layer1pred <-final_predictions_layer1rf
+
+#Build the double random forest model
+
+tuning_grid <- expand.grid(mtry = c(1, 2, 3))
+
+rfrf_model <- train(
+  sum_raw_value_provided ~ layer1pred + avg_sentiment_indirect_mentions +mean_sentiment,
+  data = final_train_data,
+  method = "rf",
+  tuneGrid= tuning_grid,  # Specify the tuning grid
+  trControl = ctrl
+)
+
+print(rfrf_model)
+plot(rfrf_model)
+
+
+#build the rf lm no sentiment model
+
+rflm_NoSentiment_model <- lm(sum_raw_value_provided ~ layer1pred , data = final_train_data )
+
+summary(rflm_NoSentiment_model)
+
+
+#Build the rf lm sentiment model
+
+rflm_Sentiment_model <- lm(sum_raw_value_provided ~ layer1pred + Direct_mentions + avg_sentiment_indirect_mentions +mean_sentiment, data = final_train_data )
+
+summary(rflm_Sentiment_model)
+
+#now lets look at how all three fair against the test data
+
+predictionsL1 <- predict(rf_model1, newdata = final_test_data)
+
+
+final_test_data$layer1pred <-predictionsL1
+
+
+predictions_Sentiment <- predict(rflm_Sentiment_model, newdata = final_test_data)
+
+predictions_NoSentiment <- predict(rflm_NoSentiment_model, newdata = final_test_data)
+
+predictions_rf <- predict(rfrf_model, newdata = final_test_data)
+
+
+predictions_df <- data.frame(
+  Sentiment = predictions_Sentiment,
+  NoSentiment = predictions_NoSentiment,
+  rf_model = predictions_rf
+)
+
+
+print(predictions_df)
+
+actual_values <- final_test_data$sum_raw_value_provided
+
+rmse_Sentiment <- sqrt(mean((predictions_Sentiment - actual_values)^2))
+
+
+rmse_NoSentiment <- sqrt(mean((predictions_NoSentiment - actual_values)^2))
+
+
+rmse_rf <- sqrt(mean((predictions_rf - actual_values)^2))
+
+# Display RMSE for each model
+cat("RMSE for Sentiment Model:", rmse_Sentiment, "\n")
+cat("RMSE for No Sentiment Model:", rmse_NoSentiment, "\n")
+cat("RMSE for Random Forest Model:", rmse_rf, "\n")
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
