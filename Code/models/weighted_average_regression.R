@@ -23,9 +23,9 @@ df_data <- na.omit(df_data)
 summary(df_data)
 
 # Main Regression
-naive_regression <- lm(expected_value ~ round.x + position, data = df_data)
+naive_regression <- lm(sum_raw_value_provided ~ expected_value, data = df_data)
 
-naive_regression_1 <- lm(sum_raw_value_provided ~ round.x + position, data = df_data)
+naive_regression_1 <- lm(sum_raw_value_provided ~ expected_value, data = df_data)
 
 summary(naive_regression_1)
 
